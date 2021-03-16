@@ -7,11 +7,12 @@
 //
 
 #include "MusicDeviceBase.h"
+#include "AUInstrumentBase.h" // Instrument must be inherited from AUInstrumentBase
 #include "mt32emu/mt32emu.h"
 
 #pragma once
 
-class MT32Synth : public MusicDeviceBase {
+class MT32Synth : public AUInstrumentBase { // Instrument must be inherited from AUInstrumentBase
     public:
         MT32Synth(ComponentInstance inComponentInstance);
         virtual ~MT32Synth();
@@ -30,6 +31,15 @@ class MT32Synth : public MusicDeviceBase {
         virtual OSStatus HandleNoteOff(	UInt8 inChannel, UInt8 inNoteNumber, UInt8 inVelocity, UInt32 inStartFrame);
     
         virtual OSStatus HandlePitchWheel(UInt8 inChannel, UInt8 inPitch1, UInt8 inPitch2, UInt32 inStartFrame);
+    
+        virtual OSStatus HandleProgramChange(UInt8 inChannel, UInt8 inValue);
+        virtual OSStatus HandleControlChange(UInt8 inChannel,UInt8 inController,UInt8 inValue,UInt32 inStartFrame);
+        virtual OSStatus HandleAllNotesOff(UInt8 inChannel);
+        virtual OSStatus HandleAllSoundOff(UInt8 inChannel);
+        virtual OSStatus HandleResetAllControllers(UInt8 inChannel);
+
+
+    
     
         virtual OSStatus GetParameterValueStrings(AudioUnitScope inScope, AudioUnitParameterID inParameterID, CFArrayRef *outStrings);
     
@@ -53,6 +63,10 @@ class MT32Synth : public MusicDeviceBase {
     
         const MT32Emu::ROMImage *romImage;
         const MT32Emu::ROMImage *pcmRomImage;
+        
+        bool/*unsigned int*/ bSelectRhythmTrack;
+    
+    
     
 };
 

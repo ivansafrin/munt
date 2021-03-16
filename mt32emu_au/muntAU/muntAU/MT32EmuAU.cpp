@@ -24,15 +24,19 @@ static const CFStringRef kReverbEnabledParamName = CFSTR("Reverb enabled");
 static const AudioUnitParameterID kReverbGainParam = 3;
 static const CFStringRef kReverbGainParamName = CFSTR("Reverb gain");
 
+static const AudioUnitParameterID kSelectRhythmTrack = 4;
+static const CFStringRef kSelectRhythmTrackParamName = CFSTR("Select Rhythm Track");
+
 
 MT32Synth::MT32Synth(ComponentInstance inComponentInstance)
-: MusicDeviceBase(inComponentInstance, 0, 8) {
+: AUInstrumentBase(inComponentInstance, 0, 8) {
     CreateElements();
     
     Globals()->SetParameter(kGlobalVolumeParam, 2.111);
     Globals()->SetParameter(kInstrumentParam, 0.0);
     Globals()->SetParameter(kReverbEnabledParam, 1.0);
     Globals()->SetParameter(kReverbGainParam, 1.0);
+    Globals()->SetParameter(kSelectRhythmTrack, 0.0);
     
     synth = NULL;
     lastBufferData = NULL;
@@ -52,7 +56,7 @@ OSStatus MT32Synth::Initialize() {
     destFormat = GetStreamFormat(kAudioUnitScope_Output, 0);
     
     AudioStreamBasicDescription sourceDescription;
-    sourceDescription.mSampleRate = 32000;
+    sourceDescription.mSampleRate = 44100;
     sourceDescription.mBytesPerFrame = 4;
     sourceDescription.mBitsPerChannel = 16;
     sourceDescription.mFormatID = kAudioFormatLinearPCM;
@@ -78,6 +82,8 @@ OSStatus MT32Synth::Initialize() {
     romImage = MT32Emu::ROMImage::makeROMImage(&controlROMFile);
     pcmRomImage = MT32Emu::ROMImage::makeROMImage(&pcmROMFile);
     
+    bSelectRhythmTrack = false;
+    
     synth = new MT32Emu::Synth();
     synth->open(*romImage, *pcmRomImage);
     
@@ -85,7 +91,7 @@ OSStatus MT32Synth::Initialize() {
     MT32Emu::ROMImage::freeROMImage(pcmRomImage);
     
     sendMIDI(0xC1, 0x00, 0x00, 0x00);
-    MusicDeviceBase::Initialize();
+    AUInstrumentBase::Initialize();
 	
     synth->setOutputGain(2.0);
     
@@ -114,19 +120,72 @@ bool MT32Synth::StreamFormatWritable(	AudioUnitScope scope, AudioUnitElement ele
 }
 
 OSStatus MT32Synth::HandleNoteOn(UInt8 inChannel, UInt8 inNoteNumber, UInt8 inVelocity, UInt32 inStartFrame) {
-    sendMIDI(0x91, inNoteNumber, inVelocity, 0x00);
-    return MusicDeviceBase::HandleNoteOn(inChannel, inNoteNumber, inVelocity, inStartFrame);
+	if(!bSelectRhythmTrack)
+	    sendMIDI(0x91, inNoteNumber, inVelocity, 0x00);
+	else
+	    sendMIDI(0x99, inNoteNumber, inVelocity, 0x00);
+    return AUInstrumentBase::HandleNoteOn(inChannel, inNoteNumber, inVelocity, inStartFrame);
 }
 
 OSStatus MT32Synth::HandlePitchWheel(UInt8 inChannel, UInt8 inPitch1, UInt8 inPitch2, UInt32 inStartFrame) {
-    sendMIDI(0xE1, inPitch1, inPitch2, inStartFrame);
-    return MusicDeviceBase::HandlePitchWheel(inChannel, inPitch1, inPitch2, inStartFrame);
+	if(!bSelectRhythmTrack)
+	    sendMIDI(0xE1, inPitch1, inPitch2, inStartFrame);
+	else
+	    sendMIDI(0xE9, inPitch1, inPitch2, inStartFrame);
+    return AUInstrumentBase::HandlePitchWheel(inChannel, inPitch1, inPitch2, inStartFrame);
 }
 
 OSStatus MT32Synth::HandleNoteOff(	UInt8 inChannel, UInt8 inNoteNumber, UInt8 inVelocity, UInt32 inStartFrame) {
-    sendMIDI(0x81, inNoteNumber, inVelocity, 0x00);
-    return MusicDeviceBase::HandleNoteOff(inChannel, inNoteNumber, inVelocity, inStartFrame);
+	if(!bSelectRhythmTrack)
+	    sendMIDI(0x81, inNoteNumber, inVelocity, 0x00);
+	else
+	    sendMIDI(0x89, inNoteNumber, inVelocity, 0x00);
+    return AUInstrumentBase::HandleNoteOff(inChannel, inNoteNumber, inVelocity, inStartFrame);
 }
+
+OSStatus MT32Synth::HandleProgramChange( UInt8 inChannel, UInt8 inValue)
+{
+    Globals()->SetParameter(kInstrumentParam, inValue);
+    sendMIDI(0xC1, inValue, 0x00, 0x00);
+
+    return AUInstrumentBase::HandleProgramChange(inChannel, inValue);
+}
+OSStatus MT32Synth::HandleControlChange(UInt8 inChannel,UInt8 inController,UInt8 inValue,UInt32 inStartFrame)
+{
+    if(!bSelectRhythmTrack)
+        sendMIDI(0xB1, inController,inValue, 0x00);
+    else
+        sendMIDI(0xB9, inController,inValue, 0x00);
+    
+    return AUInstrumentBase::HandleControlChange( inChannel, inController, inValue, inStartFrame);
+}
+
+OSStatus MT32Synth::HandleAllNotesOff(UInt8 inChannel)
+{
+    sendMIDI(0xb1, 123, 0x00, 0x00);
+    sendMIDI(0xb9, 123, 0x00, 0x00);
+
+    return AUInstrumentBase::HandleAllNotesOff(inChannel);
+}
+
+OSStatus MT32Synth::HandleAllSoundOff(UInt8 inChannel)
+{
+    sendMIDI(0xb1, 120, 0x00, 0x00);
+    sendMIDI(0xb9, 120, 0x00, 0x00);
+
+
+    return AUInstrumentBase::HandleAllSoundOff(inChannel);
+}
+
+OSStatus MT32Synth::HandleResetAllControllers(UInt8 inChannel)
+{
+    sendMIDI(0xb1, 121, 0x00, 0x00);
+    sendMIDI(0xb9, 121, 0x00, 0x00);
+
+
+    return AUInstrumentBase::HandleAllSoundOff(inChannel);
+}
+
 
 static OSStatus EncoderDataProc(AudioConverterRef inAudioConverter, UInt32 *ioNumberDataPackets, AudioBufferList *ioData, AudioStreamPacketDescription **outDataPacketDescription, void *inUserData)
 {
@@ -171,7 +230,7 @@ OSStatus MT32Synth::Render(AudioUnitRenderActionFlags &ioActionFlags, const Audi
 void MT32Synth::Cleanup() {
     synth->close();
     delete synth;
-    MusicDeviceBase::Cleanup();
+    AUInstrumentBase::Cleanup();
 }
 
 OSStatus MT32Synth::SetParameter(AudioUnitParameterID inID, AudioUnitScope 	inScope, AudioUnitElement inElement, AudioUnitParameterValue	inValue, UInt32	inBufferOffsetInFrames) {
@@ -184,14 +243,21 @@ OSStatus MT32Synth::SetParameter(AudioUnitParameterID inID, AudioUnitScope 	inSc
         sendMIDI(0xC1, inValue, 0x00, 0x00);
     } else if(inID == kReverbEnabledParam) {
         if(synth){
-            synth->setReverbEnabled(inValue == 1.0);
+            //synth->setReverbEnabled(inValue == 1.0); //issue: crash at [Enabled]
         }
     } else if(inID == kReverbGainParam) {
         if(synth){
             synth->setReverbOutputGain(inValue);
         }
+    } else if(inID == kSelectRhythmTrack) {
+        bool bOldMode = bSelectRhythmTrack;
+        bSelectRhythmTrack = (inValue == 1.0);
+        if(bOldMode != bSelectRhythmTrack){
+            sendMIDI(0xb1, 123, 0x00, 0x00);
+            sendMIDI(0xb9, 123, 0x00, 0x00);
+        }
     }
-    return MusicDeviceBase::SetParameter(inID, inScope, inElement, inValue, inBufferOffsetInFrames);
+    return AUInstrumentBase::SetParameter(inID, inScope, inElement, inValue, inBufferOffsetInFrames);
 }
 
 OSStatus MT32Synth::GetParameterValueStrings(AudioUnitScope inScope, AudioUnitParameterID inParameterID, CFArrayRef *outStrings) {
@@ -340,11 +406,14 @@ OSStatus MT32Synth::GetParameterValueStrings(AudioUnitScope inScope, AudioUnitPa
 }
 
 OSStatus MT32Synth::RestoreState(CFPropertyListRef inData) {
-    MusicDeviceBase::RestoreState(inData);
-    synth->setOutputGain(Globals()->GetParameter(kGlobalVolumeParam));
-    synth->setReverbOutputGain(Globals()->GetParameter(kReverbGainParam));
-    synth->setReverbEnabled(Globals()->GetParameter(kReverbEnabledParam) == 1.0);
-    sendMIDI(0xC1, Globals()->GetParameter(kInstrumentParam), 0x00, 0x00);
+    AUInstrumentBase::RestoreState(inData);
+    if(synth){ // required validation with auvaltool
+	    synth->setOutputGain(Globals()->GetParameter(kGlobalVolumeParam));
+	    synth->setReverbOutputGain(Globals()->GetParameter(kReverbGainParam));
+	    //synth->setReverbEnabled(Globals()->GetParameter(kReverbEnabledParam) == 1.0);
+        synth->setReverbEnabled(false /*bReverb*/); //issue: crash at reverb set to Enabled
+	    sendMIDI(0xC1, Globals()->GetParameter(kInstrumentParam), 0x00, 0x00);
+	}
     return noErr;
 }
 
@@ -369,7 +438,7 @@ OSStatus MT32Synth::GetParameterInfo(AudioUnitScope inScope,
     } else if (inParameterID == kInstrumentParam) {
         if (inScope != kAudioUnitScope_Global) return kAudioUnitErr_InvalidScope;
         
-        outParameterInfo.flags = kAudioUnitParameterFlag_ValuesHaveStrings;
+        outParameterInfo.flags =  kAudioUnitParameterFlag_HasCFNameString;//no use kAudioUnitParameterFlag_ValuesHaveStrings;
         outParameterInfo.flags += kAudioUnitParameterFlag_IsWritable;
         outParameterInfo.flags += kAudioUnitParameterFlag_IsReadable;
         
@@ -383,7 +452,7 @@ OSStatus MT32Synth::GetParameterInfo(AudioUnitScope inScope,
     } else if (inParameterID == kReverbEnabledParam) {
         if (inScope != kAudioUnitScope_Global) return kAudioUnitErr_InvalidScope;
         
-        outParameterInfo.flags += kAudioUnitParameterFlag_IsWritable;
+        outParameterInfo.flags  = kAudioUnitParameterFlag_IsWritable;
         outParameterInfo.flags += kAudioUnitParameterFlag_IsReadable;
         
         AUBase::FillInParameterName (outParameterInfo, kReverbEnabledParamName, false);
@@ -405,6 +474,19 @@ OSStatus MT32Synth::GetParameterInfo(AudioUnitScope inScope,
         outParameterInfo.minValue = 0.0f;
         outParameterInfo.maxValue = 5.0f;
         outParameterInfo.defaultValue = 1.0f;
+        
+        return noErr;
+    } else if (inParameterID == kSelectRhythmTrack) {
+        if (inScope != kAudioUnitScope_Global) return kAudioUnitErr_InvalidScope;
+        
+        outParameterInfo.flags  = kAudioUnitParameterFlag_IsWritable;
+        outParameterInfo.flags += kAudioUnitParameterFlag_IsReadable;
+        
+        AUBase::FillInParameterName (outParameterInfo, kSelectRhythmTrackParamName, false);
+        outParameterInfo.unit = kAudioUnitParameterUnit_Boolean;
+        outParameterInfo.minValue = 0;
+        outParameterInfo.maxValue = 1.0;
+        outParameterInfo.defaultValue = 0.0;
         
         return noErr;
     } else {
