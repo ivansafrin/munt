@@ -413,6 +413,7 @@ OSStatus MT32Synth::RestoreState(CFPropertyListRef inData) {
 	    //synth->setReverbEnabled(Globals()->GetParameter(kReverbEnabledParam) == 1.0);
         synth->setReverbEnabled(false /*bReverb*/); //issue: crash at reverb set to Enabled
 	    sendMIDI(0xC1, Globals()->GetParameter(kInstrumentParam), 0x00, 0x00);
+        bSelectRhythmTrack = (Globals()->GetParameter(kSelectRhythmTrack) == 1.0);
 	}
     return noErr;
 }
